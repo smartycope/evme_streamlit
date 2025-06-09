@@ -2,22 +2,12 @@ import streamlit as st
 import requests
 from streamlit import session_state as ss
 
-
 if "idx" not in ss:
     ss.idx = 0
 if "info" not in ss:
     ss.info = {}
 
-STEPS = 9
-
-def back_next(next=1, prev=1):
-    l, r = st.columns(2)
-    if r.form_submit_button("Next"):
-        ss.idx = min(STEPS, ss.idx + next)
-        st.rerun()
-    if l.form_submit_button("Back"):
-        ss.idx = max(0, ss.idx - prev)
-        st.rerun()
+STEPS = 10
 
 @st.cache_data
 def get_all_makes():
@@ -37,6 +27,44 @@ def get_models(year, make):
     res = requests.get(url).json()
     return sorted({item['Model_Name'] for item in res['Results']})
 
+def get_make_model_year(current_year=None, current_make=None, current_model=None):
+    years = list(range(1980, 2025))[::-1]
+    year = st.selectbox(
+        "Year",
+        years,
+        placeholder='Select a year',
+        index=years.index(current_year) if current_year is not None else None
+    )
+    makes = get_all_car_makes()
+    make = st.selectbox(
+        "Make",
+        makes,
+        index=makes.index(current_make) if current_make is not None else None,
+        placeholder='Select a make'
+    )
+    can_get_models = make is not None and year is not None
+    models = get_models(year, make) if can_get_models else []
+    model = st.selectbox(
+        "Model",
+        models,
+        index=models.index(current_model) if current_model is not None else None,
+        placeholder='Select a model', disabled=not can_get_models
+    )
+    return make, model, year
+
+ss.get_all_makes = get_all_makes
+ss.get_all_car_makes = get_all_car_makes
+ss.get_models = get_models
+ss.get_make_model_year = get_make_model_year
+
+def back_next(next=1, prev=1):
+    l, r = st.columns(2)
+    if r.form_submit_button("Next"):
+        ss.idx = min(STEPS, ss.idx + next)
+        st.rerun()
+    if l.form_submit_button("Back"):
+        ss.idx = max(0, ss.idx - prev)
+        st.rerun()
 
 # Main form
 if st.button('Clear info'):
@@ -49,7 +77,8 @@ st.progress(max(0, ss.idx)/STEPS)
 match ss.idx:
     # Welcome screen
     case 0:
-        """# Welcome to Vehicle Information Manager
+        """
+        # Welcome to Vehicle Information Manager
 
         Click the button below to get started."""
         if st.button("Start"):
@@ -58,29 +87,10 @@ match ss.idx:
 
     # Current Car
     case 1:
-        years = list(range(1980, 2025))[::-1]
-        ss.info["year"] = st.selectbox(
-            "Year",
-            years,
-            placeholder='Select a year',
-            index=years.index(ss.info['year']) if 'year' in ss.info and ss.info['year'] is not None else None
-        )
-        makes = get_all_car_makes()
-        ss.info["make"] = st.selectbox(
-            "Make",
-            makes,
-            index=makes.index(ss.info['make']) if 'make' in ss.info and ss.info['make'] is not None else None,
-            placeholder='Select a make'
-        )
-        can_get_models = 'make' in ss.info and ss.info['make'] is not None and 'year' in ss.info and ss.info['year'] is not None
-        models = get_models(ss.info['year'], ss.info['make']) if can_get_models else []
-        ss.info["model"] = st.selectbox(
-            "Model",
-            models,
-            index=models.index(ss.info['model']) if 'model' in ss.info and ss.info['model'] is not None else None,
-            placeholder='Select a model', disabled=not can_get_models
-        )
-
+        make, model, year = get_make_model_year(ss.info.get("year", None), ss.info.get("make", None), ss.info.get("model", None))
+        ss.info["make"] = make
+        ss.info["model"] = model
+        ss.info["year"] = year
 
         # Display the selection
         if st.button("Next"):
