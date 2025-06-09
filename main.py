@@ -2,28 +2,6 @@ import streamlit as st
 import requests
 from streamlit import session_state as ss
 
-def lookup_vin(vin):
-    url = f"https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVin/{vin}?format=json"
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        decoded_info = {entry["Variable"]: entry["Value"] for entry in data["Results"] if entry["Value"]}
-        return decoded_info, data
-    else:
-        return {"Error": "Failed to retrieve data"}
-
-with st.expander("VIN Lookup"):
-    st.title("Vehicle VIN Lookup")
-    vin = st.text_input("Enter a VIN number:")
-
-    if vin:
-        with st.spinner("Looking up VIN..."):
-            vin_data, raw = lookup_vin(vin)
-            if "Error" in vin_data:
-                st.error(vin_data["Error"])
-            else:
-                st.json(vin_data)
-
 
 if "idx" not in ss:
     ss.idx = 0
@@ -32,31 +10,94 @@ if "info" not in ss:
 
 STEPS = 9
 
-def back_next():
+def back_next(next=1, prev=1):
     l, r = st.columns(2)
     if r.form_submit_button("Next"):
-        ss.idx = min(STEPS, ss.idx + 1)
+        ss.idx = min(STEPS, ss.idx + next)
         st.rerun()
     if l.form_submit_button("Back"):
-        ss.idx = max(0, ss.idx - 1)
+        ss.idx = max(0, ss.idx - prev)
         st.rerun()
 
-# Current Situation (Input)
-st.progress(ss.idx/STEPS)
+@st.cache_data
+def get_all_makes():
+    url = "https://vpic.nhtsa.dot.gov/api/vehicles/getallmakes?format=json"
+    res = requests.get(url).json()
+    return sorted({item['MakeName'] for item in res['Results']})
+
+@st.cache_data
+def get_all_car_makes():
+    url = "https://vpic.nhtsa.dot.gov/api/vehicles/GetMakesForVehicleType/car?format=json"
+    res = requests.get(url).json()
+    return sorted({item['MakeName'] for item in res['Results']})
+
+@st.cache_data
+def get_models(year, make):
+    url = f"https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/{make}/modelyear/{year}?format=json"
+    res = requests.get(url).json()
+    return sorted({item['Model_Name'] for item in res['Results']})
+
+
+# Main form
+if st.button('Clear info'):
+    ss.info = {}
+    st.rerun()
+
+ss.info
+st.progress(max(0, ss.idx)/STEPS)
+
 match ss.idx:
+    # Welcome screen
     case 0:
-        with st.form("current_car"):
-            st.title("Current Car")
-            ss.info["year"] = st.text_input("Year", ss.info.get("year", ""))
-            makes = ["Toyota", "Honda", "Ford", "Chevrolet", "Dodge", "BMW", "Audi", "Mercedes", "Jaguar", "Porsche"]
-            ss.info["make"] = st.selectbox("Make", makes, makes.index(ss.info.get("make", makes[0])))
-            models = ["Camry", "Civic", "Mustang", "Impala", "Charger", "M3", "A4", "C300", "XE", "911"]
-            ss.info["model"] = st.selectbox("Model", models, models.index(ss.info.get("model", models[0])))
-            trims = ["Base", "Premium", "Luxury"]
-            ss.info["trim"] = st.selectbox("Trim", trims, trims.index(ss.info.get("trim", trims[0])))
-            ss.info["vin"] = st.text_input("VIN", ss.info.get("vin", ""))
-            back_next()
+        """# Welcome to Vehicle Information Manager
+
+        Click the button below to get started."""
+        if st.button("Start"):
+            ss.idx += 1
+            st.rerun()
+
+    # Current Car
     case 1:
+        years = list(range(1980, 2025))[::-1]
+        ss.info["year"] = st.selectbox(
+            "Year",
+            years,
+            placeholder='Select a year',
+            index=years.index(ss.info['year']) if 'year' in ss.info and ss.info['year'] is not None else None
+        )
+        makes = get_all_car_makes()
+        ss.info["make"] = st.selectbox(
+            "Make",
+            makes,
+            index=makes.index(ss.info['make']) if 'make' in ss.info and ss.info['make'] is not None else None,
+            placeholder='Select a make'
+        )
+        can_get_models = 'make' in ss.info and ss.info['make'] is not None and 'year' in ss.info and ss.info['year'] is not None
+        models = get_models(ss.info['year'], ss.info['make']) if can_get_models else []
+        ss.info["model"] = st.selectbox(
+            "Model",
+            models,
+            index=models.index(ss.info['model']) if 'model' in ss.info and ss.info['model'] is not None else None,
+            placeholder='Select a model', disabled=not can_get_models
+        )
+
+
+        # Display the selection
+        if st.button("Next"):
+            ss.idx += 1
+            st.rerun()
+
+        # st.title("Current Car")
+        # makes = ["Toyota", "Honda", "Ford", "Chevrolet", "Dodge", "BMW", "Audi", "Mercedes", "Jaguar", "Porsche"]
+        # ss.info["make"] = st.selectbox("Make", makes, makes.index(ss.info.get("make", makes[0])), disabled=ss.info.get("year", None))
+        # models = ["Camry", "Civic", "Mustang", "Impala", "Charger", "M3", "A4", "C300", "XE", "911"]
+        # ss.info["model"] = st.selectbox("Model", models, models.index(ss.info.get("model", models[0])), disabled=ss.info.get("make", None))
+        # trims = ["Base", "Premium", "Luxury"]
+        # ss.info["trim"] = st.selectbox("Trim", trims, trims.index(ss.info.get("trim", trims[0])), disabled=ss.info.get("model", None))
+        # ss.info["vin"] = st.text_input("VIN", ss.info.get("vin", ""))
+        # back_next()
+    # Stats of current car
+    case 2:
         with st.form("Stats"):
             st.title("Stats")
             ss.info["mileage"] = st.number_input("Mileage", min_value=0, value=ss.info.get("mileage", 0))
@@ -69,13 +110,15 @@ match ss.idx:
             ss.info["modifications"] = st.text_input("Modifications", ss.info.get("modifications", ""))
             ss.info["tires"] = st.text_input("Tires", ss.info.get("tires", ""))
             back_next()
-    case 2:
+    # Ownership
+    case 3:
         with st.form("Ownership"):
             st.title("Ownership")
             ownership = ["Own", "Financed", "Leased"]
             ss.info["ownership"] = st.selectbox("Ownership", ownership, ownership.index(ss.info.get("ownership", "Own")))
-            back_next()
-    case 3:
+            back_next(next=2 if ss.info["ownership"] == "Own" else 1)
+    # Financials
+    case 4:
         with st.form("Financials"):
             st.title("Financials")
             if ss.info["ownership"] == "Financed":
@@ -90,42 +133,49 @@ match ss.idx:
                 ss.info["ending_term"] = st.number_input("Ending Term", min_value=0, value=ss.info.get("ending_term", 0))
                 ss.info["monthly_payment"] = st.number_input("Monthly Payment", min_value=0, value=ss.info.get("monthly_payment", 0))
             back_next()
-    case 4:
+    # Insurance
+    case 5:
         with st.form("Insurance"):
             st.title("Insurance")
             insurance = ["Owned", "Leased", "Other"]
             ss.info["insurance"] = st.selectbox("Insurance", insurance, insurance.index(ss.info.get("insurance", "Owned")))
             back_next()
-    case 5:
+    # Driving
+    case 6:
         with st.form("Driving"):
             st.title("Driving")
             driving = ["Owner", "Renter", "Leased", "Other"]
             ss.info["driving"] = st.selectbox("Driving status", driving, driving.index(ss.info.get("driving", "Owner")))
             back_next()
-    case 6:
+    # Location
+    case 7:
         with st.form("Location"):
             st.title("Location")
             location = ["Home", "Work", "Other"]
             ss.info["location"] = st.selectbox("Location", location, location.index(ss.info.get("location", "Home")))
             back_next()
-    case 7:
+    # Preferences
+    case 8:
         with st.form("Preferences"):
             st.title("Preferences")
             preferences = ["Electric", "Hybrid", "Other"]
             ss.info["preferences"] = st.selectbox("Preferences", preferences, preferences.index(ss.info.get("preferences", "Electric")))
             back_next()
-    case 8:
+    # Finances
+    case 9:
         with st.form("Finances"):
             st.title("Finances")
             ss.info["finances"] = st.number_input("Finances", min_value=0, value=ss.info.get("finances", 0))
             back_next()
-    case 9:
-        if st.button("Take again"):
+    # Submit
+    case 10:
+        st.success("Form submitted successfully!")
+        st.balloons()
+        st.json(ss.info)
+
+        if st.button("Start Over"):
             ss.idx = 0
-            st.balloons()
             ss.info = {}
-            st.success("Success!")
             st.rerun()
-        ss.info
 
 
