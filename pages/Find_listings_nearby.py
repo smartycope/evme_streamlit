@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 from streamlit import session_state as ss
-from sympy.logic import false
 
 @st.cache_data
 def get_all_makes():
