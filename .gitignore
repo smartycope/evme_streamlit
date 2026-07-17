@@ -176,3 +176,4 @@ cython_debug/
 VPIC.session.sql
 settings.json
 *.deleteme*
+secrets.toml

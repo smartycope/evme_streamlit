@@ -1,77 +1,10 @@
 import streamlit as st
 import requests
 from streamlit import session_state as ss
-
-@st.cache_data
-def get_all_makes():
-    url = "https://vpic.nhtsa.dot.gov/api/vehicles/getallmakes?format=json"
-    res = requests.get(url).json()
-    return sorted({item['MakeName'] for item in res['Results']})
-
-@st.cache_data
-def get_all_car_makes():
-    url = "https://vpic.nhtsa.dot.gov/api/vehicles/GetMakesForVehicleType/car?format=json"
-    res = requests.get(url).json()
-    return sorted({item['MakeName'] for item in res['Results']})
-
-@st.cache_data
-def get_models(year, make):
-    url = f"https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/{make}/modelyear/{year}?format=json"
-    res = requests.get(url).json()
-    return sorted({item['Model_Name'] for item in res['Results']})
-
-def get_make_model_year(current_year=None, current_make=None, current_model=None):
-    years = list(range(1980, 2025))[::-1]
-    year = st.selectbox(
-        "Year",
-        years,
-        placeholder='Select a year',
-        index=years.index(current_year) if current_year is not None else None
-    )
-    makes = get_all_car_makes()
-    make = st.selectbox(
-        "Make",
-        makes,
-        index=makes.index(current_make) if current_make is not None else None,
-        placeholder='Select a make'
-    )
-    can_get_models = make is not None and year is not None
-    models = get_models(year, make) if can_get_models else []
-    model = st.selectbox(
-        "Model",
-        models,
-        index=models.index(current_model) if current_model is not None else None,
-        placeholder='Select a model', disabled=not can_get_models
-    )
-    return make, model, year
-
-
-def get_make_model_year(current_year=None, current_make=None, current_model=None):
-    years = list(range(1980, 2025))[::-1]
-    year = st.selectbox(
-        "Year",
-        years,
-        placeholder='Select a year',
-        index=years.index(current_year) if current_year is not None else None
-    )
-    makes = get_all_car_makes()
-    make = st.selectbox(
-        "Make",
-        makes,
-        index=makes.index(current_make) if current_make is not None else None,
-        placeholder='Select a make'
-    )
-    can_get_models = make is not None and year is not None
-    models = get_models(year, make) if can_get_models else []
-    model = st.selectbox(
-        "Model",
-        models,
-        index=models.index(current_model) if current_model is not None else None,
-        placeholder='Select a model', disabled=not can_get_models
-    )
-    return make, model, year
+from utils import get_make_model_year, get_listings
 
 st.title("Find listings nearby")
+
 @st.cache_data
 def get_listings(**kwargs):
     """Get listings from auto.dev"""
@@ -100,8 +33,6 @@ else:
 
 with st.form("Find listings", border=False):
     # st.title("Find listings")
-
-
     with st.expander('More options'):
         price_max = query(st.number_input, "Price Max", min_value=0, value=60000)
         city = query(st.text_input, "City", value="Boise")
