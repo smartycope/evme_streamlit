@@ -1,191 +1,206 @@
-import streamlit as st
+"""A small Streamlit prototype for searching dealership EV listings."""
+
+from __future__ import annotations
+
+from math import asin, cos, radians, sin, sqrt
+from typing import Any
+
 import requests
-from streamlit import session_state as ss
+import streamlit as st
 
-if "idx" not in ss:
-    ss.idx = 0
-if "info" not in ss:
-    ss.info = {}
+API_URL = "https://api.auto.dev/listings"
+ZIP_API_URL = "https://auto.dev/api/zip"
+RESULTS_PER_PAGE = 10
+SEARCH_PARAMS_KEY = "listing_search_params"
+TOTAL_RESULTS_KEY = "listing_total_results"
+PAGE_KEY = "listing_page"
 
-STEPS = 10
 
-@st.cache_data
-def get_all_makes():
-    url = "https://vpic.nhtsa.dot.gov/api/vehicles/getallmakes?format=json"
-    res = requests.get(url).json()
-    return sorted({item['MakeName'] for item in res['Results']})
-
-@st.cache_data
-def get_all_car_makes():
-    url = "https://vpic.nhtsa.dot.gov/api/vehicles/GetMakesForVehicleType/car?format=json"
-    res = requests.get(url).json()
-    return sorted({item['MakeName'] for item in res['Results']})
-
-@st.cache_data
-def get_models(year, make):
-    url = f"https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/{make}/modelyear/{year}?format=json"
-    res = requests.get(url).json()
-    return sorted({item['Model_Name'] for item in res['Results']})
-
-def get_make_model_year(current_year=None, current_make=None, current_model=None):
-    years = list(range(1980, 2025))[::-1]
-    year = st.selectbox(
-        "Year",
-        years,
-        placeholder='Select a year',
-        index=years.index(current_year) if current_year is not None else None
+@st.cache_data(ttl=300, show_spinner=False)
+def get_listings(params: dict[str, Any]) -> dict[str, Any]:
+    """Fetch a page of active dealership listings from Auto.dev."""
+    response = requests.get(
+        API_URL,
+        params=params,
+        headers={"Authorization": f"Bearer {st.secrets['AUTO_DEV_API_KEY']}"},
+        timeout=20,
     )
-    makes = get_all_car_makes()
-    make = st.selectbox(
-        "Make",
-        makes,
-        index=makes.index(current_make) if current_make is not None else None,
-        placeholder='Select a make'
+    response.raise_for_status()
+    return response.json()
+
+
+@st.cache_data(ttl=86_400, show_spinner=False)
+def get_zip_coordinates(zip_code: str) -> tuple[float, float]:
+    """Return the longitude and latitude for a ZIP code from Auto.dev."""
+    response = requests.get(
+        f"{ZIP_API_URL}/{zip_code}",
+        headers={"Authorization": f"Bearer {st.secrets['AUTO_DEV_API_KEY']}"},
+        timeout=20,
     )
-    can_get_models = make is not None and year is not None
-    models = get_models(year, make) if can_get_models else []
-    model = st.selectbox(
-        "Model",
-        models,
-        index=models.index(current_model) if current_model is not None else None,
-        placeholder='Select a model', disabled=not can_get_models
-    )
-    return make, model, year
-
-ss.get_all_makes = get_all_makes
-ss.get_all_car_makes = get_all_car_makes
-ss.get_models = get_models
-ss.get_make_model_year = get_make_model_year
-
-def back_next(next=1, prev=1):
-    l, r = st.columns(2)
-    if r.form_submit_button("Next"):
-        ss.idx = min(STEPS, ss.idx + next)
-        st.rerun()
-    if l.form_submit_button("Back"):
-        ss.idx = max(0, ss.idx - prev)
-        st.rerun()
-
-# Main form
-if st.button('Clear info'):
-    ss.info = {}
-    st.rerun()
-
-ss.info
-st.progress(max(0, ss.idx)/STEPS)
-
-match ss.idx:
-    # Welcome screen
-    case 0:
-        """
-        # Welcome to Vehicle Information Manager
-
-        Click the button below to get started."""
-        if st.button("Start"):
-            ss.idx += 1
-            st.rerun()
-
-    # Current Car
-    case 1:
-        make, model, year = get_make_model_year(ss.info.get("year", None), ss.info.get("make", None), ss.info.get("model", None))
-        ss.info["make"] = make
-        ss.info["model"] = model
-        ss.info["year"] = year
-
-        # Display the selection
-        if st.button("Next"):
-            ss.idx += 1
-            st.rerun()
-
-        # st.title("Current Car")
-        # makes = ["Toyota", "Honda", "Ford", "Chevrolet", "Dodge", "BMW", "Audi", "Mercedes", "Jaguar", "Porsche"]
-        # ss.info["make"] = st.selectbox("Make", makes, makes.index(ss.info.get("make", makes[0])), disabled=ss.info.get("year", None))
-        # models = ["Camry", "Civic", "Mustang", "Impala", "Charger", "M3", "A4", "C300", "XE", "911"]
-        # ss.info["model"] = st.selectbox("Model", models, models.index(ss.info.get("model", models[0])), disabled=ss.info.get("make", None))
-        # trims = ["Base", "Premium", "Luxury"]
-        # ss.info["trim"] = st.selectbox("Trim", trims, trims.index(ss.info.get("trim", trims[0])), disabled=ss.info.get("model", None))
-        # ss.info["vin"] = st.text_input("VIN", ss.info.get("vin", ""))
-        # back_next()
-    # Stats of current car
-    case 2:
-        with st.form("Stats"):
-            st.title("Stats")
-            ss.info["mileage"] = st.number_input("Mileage", min_value=0, value=ss.info.get("mileage", 0))
-            ownership = ["Own", "Financed", "Leased"]
-            ss.info["ownership"] = st.selectbox("Ownership", ownership, ownership.index(ss.info.get("ownership", "Own")))
-            title_status = ["Clean", "Branded", "Rebuilt", "Salvage"]
-            ss.info["title_status"] = st.selectbox("Title Status", title_status, title_status.index(ss.info.get("title_status", "Clean")))
-            condition = ["Poor", "Fair", "Good", "Excellent"]
-            ss.info["condition"] = st.selectbox("Condition", condition, condition.index(ss.info.get("condition", "Good")))
-            ss.info["modifications"] = st.text_input("Modifications", ss.info.get("modifications", ""))
-            ss.info["tires"] = st.text_input("Tires", ss.info.get("tires", ""))
-            back_next()
-    # Ownership
-    case 3:
-        with st.form("Ownership"):
-            st.title("Ownership")
-            ownership = ["Own", "Financed", "Leased"]
-            ss.info["ownership"] = st.selectbox("Ownership", ownership, ownership.index(ss.info.get("ownership", "Own")))
-            back_next(next=2 if ss.info["ownership"] == "Own" else 1)
-    # Financials
-    case 4:
-        with st.form("Financials"):
-            st.title("Financials")
-            if ss.info["ownership"] == "Financed":
-                ss.info["monthly_payment"] = st.number_input("Monthly Payment", min_value=0, value=ss.info.get("monthly_payment", 0))
-                ss.info["when_bought"] = st.date_input("When Bought", ss.info.get("when_bought", None))
-                ss.info["how_long_on_loan"] = st.number_input("How Long on Loan", min_value=0, value=ss.info.get("how_long_on_loan", 0))
-                ss.info["how_many_months_left_on_loan"] = st.number_input("How Many Months Left on Loan", min_value=0, value=ss.info.get("how_many_months_left_on_loan", 0))
-                ss.info["interest_rate"] = st.number_input("Interest Rate", min_value=0.0, max_value=100.0, value=ss.info.get("interest_rate", 0.0))
-            if ss.info["ownership"] == "Leased":
-                ss.info["residuals"] = st.number_input("Residuals", min_value=0, value=ss.info.get("residuals", 0))
-                ss.info["buyout"] = st.number_input("Buyout", min_value=0, value=ss.info.get("buyout", 0))
-                ss.info["ending_term"] = st.number_input("Ending Term", min_value=0, value=ss.info.get("ending_term", 0))
-                ss.info["monthly_payment"] = st.number_input("Monthly Payment", min_value=0, value=ss.info.get("monthly_payment", 0))
-            back_next()
-    # Insurance
-    case 5:
-        with st.form("Insurance"):
-            st.title("Insurance")
-            insurance = ["Owned", "Leased", "Other"]
-            ss.info["insurance"] = st.selectbox("Insurance", insurance, insurance.index(ss.info.get("insurance", "Owned")))
-            back_next()
-    # Driving
-    case 6:
-        with st.form("Driving"):
-            st.title("Driving")
-            driving = ["Owner", "Renter", "Leased", "Other"]
-            ss.info["driving"] = st.selectbox("Driving status", driving, driving.index(ss.info.get("driving", "Owner")))
-            back_next()
-    # Location
-    case 7:
-        with st.form("Location"):
-            st.title("Location")
-            location = ["Home", "Work", "Other"]
-            ss.info["location"] = st.selectbox("Location", location, location.index(ss.info.get("location", "Home")))
-            back_next()
-    # Preferences
-    case 8:
-        with st.form("Preferences"):
-            st.title("Preferences")
-            preferences = ["Electric", "Hybrid", "Other"]
-            ss.info["preferences"] = st.selectbox("Preferences", preferences, preferences.index(ss.info.get("preferences", "Electric")))
-            back_next()
-    # Finances
-    case 9:
-        with st.form("Finances"):
-            st.title("Finances")
-            ss.info["finances"] = st.number_input("Finances", min_value=0, value=ss.info.get("finances", 0))
-            back_next()
-    # Submit
-    case 10:
-        st.success("Form submitted successfully!")
-        st.balloons()
-        st.json(ss.info)
-
-        if st.button("Start Over"):
-            ss.idx = 0
-            ss.info = {}
-            st.rerun()
+    response.raise_for_status()
+    location = response.json()["payload"]
+    return float(location["longitude"]), float(location["latitude"])
 
 
+def distance_in_miles(
+    origin: tuple[float, float] | None, location: Any
+) -> str:
+    """Calculate the straight-line distance between the search ZIP and listing."""
+    if origin is None or not isinstance(location, list) or len(location) != 2:
+        return "—"
+
+    try:
+        origin_lon, origin_lat = origin
+        listing_lon, listing_lat = map(float, location)
+        lat_difference = radians(listing_lat - origin_lat)
+        lon_difference = radians(listing_lon - origin_lon)
+        haversine = (
+            sin(lat_difference / 2) ** 2
+            + cos(radians(origin_lat))
+            * cos(radians(listing_lat))
+            * sin(lon_difference / 2) ** 2
+        )
+        return f"{2 * 3_958.8 * asin(sqrt(haversine)):,.0f} mi"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def listing_rows(
+    listings: list[dict[str, Any]], origin: tuple[float, float] | None = None
+) -> list[dict[str, str]]:
+    """Shape the API response into the concise table used by the prototype."""
+    rows = []
+    for listing in listings:
+        vehicle = listing.get("vehicle") or {}
+        retail = listing.get("retailListing") or {}
+        if not retail:
+            continue
+
+        year = vehicle.get("year", listing.get("year"))
+        make = vehicle.get("make", listing.get("make"))
+        model = vehicle.get("model", listing.get("model"))
+        vehicle_name = " ".join(str(part) for part in (year, make, model) if part)
+        price = retail.get("price", listing.get("price"))
+        distance = listing.get("distance", listing.get("distanceFromOrigin"))
+        listing_url = retail.get("vdp") or listing.get("clickoffUrl") or listing.get("vdpUrl")
+
+        rows.append(
+            {
+                "Dealership": str(retail.get("dealer") or listing.get("dealerName") or "—"),
+                "Vehicle": vehicle_name or "—",
+                "Distance": (
+                    f"{float(distance):,.0f} mi"
+                    if distance is not None
+                    else distance_in_miles(origin, listing.get("location"))
+                ),
+                "Price": f"${float(price):,.0f}" if price is not None else "—",
+                "Location": ", ".join(
+                    str(part)
+                    for part in (
+                        retail.get("city") or listing.get("city"),
+                        retail.get("state") or listing.get("state"),
+                    )
+                    if part
+                )
+                or "—",
+                "Listing": listing_url or "",
+            }
+        )
+    return rows
+
+
+st.set_page_config(page_title="EV Listings", page_icon="⚡", layout="wide")
+st.title("Find EV listings")
+st.caption("Search active dealership listings. Leave every field blank to browse electric vehicles nationwide.")
+
+with st.form("ev-listing-search"):
+    first_column, second_column = st.columns(2)
+    with first_column:
+        year = st.text_input("Year", placeholder="e.g. 2023")
+        make = st.text_input("Make", placeholder="e.g. Tesla")
+        model = st.text_input("Model", placeholder="e.g. Model 3")
+    with second_column:
+        zip_code = st.text_input("ZIP code", max_chars=5, placeholder="e.g. 83702")
+        radius = st.number_input("Radius (miles)", min_value=1, max_value=500, value=50, step=5)
+
+    submitted = st.form_submit_button("Find EV listings", type="primary")
+
+if submitted:
+    clean_zip = zip_code.strip()
+    if clean_zip and (not clean_zip.isdigit() or len(clean_zip) != 5):
+        st.error("Enter a valid 5-digit ZIP code.")
+        st.session_state.pop(SEARCH_PARAMS_KEY, None)
+        st.session_state.pop(TOTAL_RESULTS_KEY, None)
+    else:
+        params: dict[str, Any] = {
+            "vehicle.fuel": "Electric",
+            "limit": RESULTS_PER_PAGE,
+            "includes": "total",
+            "sort": "updatedAt.desc",
+        }
+        if year.strip():
+            params["vehicle.year"] = year.strip()
+        if make.strip():
+            params["vehicle.make"] = make.strip()
+        if model.strip():
+            params["vehicle.model"] = model.strip()
+        if clean_zip:
+            params["zip"] = clean_zip
+            params["distance"] = radius
+
+        st.session_state[SEARCH_PARAMS_KEY] = params
+        st.session_state.pop(TOTAL_RESULTS_KEY, None)
+        st.session_state[PAGE_KEY] = 1
+
+search_params = st.session_state.get(SEARCH_PARAMS_KEY)
+if search_params:
+    saved_total = st.session_state.get(TOTAL_RESULTS_KEY)
+    pagination_slot = st.empty()
+    current_page = 1
+
+    if isinstance(saved_total, int):
+        total_pages = max(1, (saved_total + RESULTS_PER_PAGE - 1) // RESULTS_PER_PAGE)
+        current_page = pagination_slot.pagination(
+            total_pages,
+            key=PAGE_KEY,
+            width="content",
+        )
+
+    try:
+        with st.spinner("Searching active EV listings..."):
+            payload = get_listings({**search_params, "page": current_page})
+    except requests.RequestException as error:
+        st.error("Auto.dev could not complete the search. Please try again shortly.")
+        st.caption(f"API error: {error}")
+    else:
+        listings = payload.get("data", payload.get("records", []))
+        origin = None
+        if search_params.get("zip"):
+            try:
+                origin = get_zip_coordinates(search_params["zip"])
+            except (KeyError, TypeError, ValueError, requests.RequestException):
+                st.warning("Listings were found, but their distances could not be calculated.")
+
+        rows = listing_rows(listings, origin)
+        total = payload.get("total")
+        if isinstance(total, int):
+            st.session_state[TOTAL_RESULTS_KEY] = total
+            if not isinstance(saved_total, int):
+                total_pages = max(1, (total + RESULTS_PER_PAGE - 1) // RESULTS_PER_PAGE)
+                pagination_slot.pagination(total_pages, key=PAGE_KEY, width="content")
+
+        if not rows:
+            st.info("No active EV listings matched this search.")
+        else:
+            total_message = f" of {total:,}" if isinstance(total, int) else ""
+            st.subheader(
+                f"Page {current_page} · Showing {len(rows):,}{total_message} active EV listings"
+            )
+            st.dataframe(
+                rows,
+                column_config={
+                    "Listing": st.column_config.LinkColumn("Listing", display_text="View listing"),
+                },
+                hide_index=True,
+                width='content',
+            )
