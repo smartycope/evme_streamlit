@@ -177,4 +177,6 @@ VPIC.session.sql
 settings.json
 *.deleteme*
 secrets.toml
-.agents/skills/developing-with-streamlit/
+# .agents/skills/
+**/developing-with-streamlit/*
+.agents/skills/developing-with-streamlit

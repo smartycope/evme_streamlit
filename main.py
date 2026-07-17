@@ -7,14 +7,14 @@ from typing import Any
 
 import requests
 import streamlit as st
+from streamlit import session_state as ss
 
 API_URL = "https://api.auto.dev/listings"
 ZIP_API_URL = "https://auto.dev/api/zip"
 RESULTS_PER_PAGE = 10
 SEARCH_PARAMS_KEY = "listing_search_params"
 TOTAL_RESULTS_KEY = "listing_total_results"
-PAGE_KEY = "listing_page"
-
+ss.setdefault("page", 1)
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_listings(params: dict[str, Any]) -> dict[str, Any]:
@@ -109,7 +109,7 @@ def listing_rows(
     return rows
 
 
-st.set_page_config(page_title="EV Listings", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="EVme", page_icon="⚡", layout="wide")
 st.title("Find EV listings")
 st.caption("Search active dealership listings. Leave every field blank to browse electric vehicles nationwide.")
 
@@ -150,7 +150,7 @@ if submitted:
 
         st.session_state[SEARCH_PARAMS_KEY] = params
         st.session_state.pop(TOTAL_RESULTS_KEY, None)
-        st.session_state[PAGE_KEY] = 1
+        ss.page = 1
 
 search_params = st.session_state.get(SEARCH_PARAMS_KEY)
 if search_params:
@@ -160,11 +160,7 @@ if search_params:
 
     if isinstance(saved_total, int):
         total_pages = max(1, (saved_total + RESULTS_PER_PAGE - 1) // RESULTS_PER_PAGE)
-        current_page = pagination_slot.pagination(
-            total_pages,
-            key=PAGE_KEY,
-            width="content",
-        )
+        current_page = pagination_slot.pagination(total_pages, default=ss.page, key='pagination0', width="content")
 
     try:
         with st.spinner("Searching active EV listings..."):
@@ -187,7 +183,7 @@ if search_params:
             st.session_state[TOTAL_RESULTS_KEY] = total
             if not isinstance(saved_total, int):
                 total_pages = max(1, (total + RESULTS_PER_PAGE - 1) // RESULTS_PER_PAGE)
-                pagination_slot.pagination(total_pages, key=PAGE_KEY, width="content")
+                pagination_slot.pagination(total_pages, default=ss.page, key='pagination1', width="content")
 
         if not rows:
             st.info("No active EV listings matched this search.")
